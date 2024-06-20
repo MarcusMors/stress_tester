@@ -1,0 +1,11 @@
+{
+  "C_Cpp.codeAnalysis.clangTidy.checks.disabled": [
+    "readability-identifier-length",
+    "cppcoreguidelines-avoid-c-arrays"
+  ],
+  "files.associations": {
+    "*.tpp": "cpp",
+    "ostream": "cpp",
+    "print": "cpp"
+  }
+}
