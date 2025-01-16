@@ -1,5 +1,6 @@
 mock/*
 dialog-examples/*
+dialog-examples
 .vscode/*
 .trunk/*
 A.cpp
