@@ -1,0 +1,48 @@
+    
+my_sol: A.cpp
+brute_sol: 
+problem: 
+my_sol_exists: 1
+brute_sol_exists: 0
+problem_exists: 0
+extension: cpp
+base_name: A
+inferred_brute_sol: A_brute.cpp
+my_sol_exists: 1
+problem_exists: 0
+problem: 
+extension: cpp
+base_name: A
+inferred_problem_file: RNG_A_brute.py
+FINAL my_sol_exists: 1
+FINAL brute_sol_exists: 1
+FINAL problem_exists: 0
+my_sol: A.cpp
+brute_sol: A_brute.cpp
+problem: A
+ 
+inside the create_RNG_file_according_to_templates
+Basic "n list" "n Matrix" "nxm Matrix" "test casing" "Graph adj"end of create_RNG_file_according_to_templates
+    
+my_sol: A.cpp
+brute_sol: 
+problem: 
+my_sol_exists: 1
+brute_sol_exists: 0
+problem_exists: 0
+extension: cpp
+base_name: A
+inferred_brute_sol: A_brute.cpp
+my_sol_exists: 1
+problem_exists: 0
+problem: 
+extension: cpp
+base_name: A
+inferred_problem_file: RNG_A_brute.py
+FINAL my_sol_exists: 1
+FINAL brute_sol_exists: 1
+FINAL problem_exists: 0
+my_sol: A.cpp
+brute_sol: A_brute.cpp
+problem: A
+ 

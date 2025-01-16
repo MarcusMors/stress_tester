@@ -25,4 +25,8 @@ this STF is an executable file that executes according the settings.
 
 
 
- 
+## Requirements
+
+```bash
+  sudo apt install dialog
+```
