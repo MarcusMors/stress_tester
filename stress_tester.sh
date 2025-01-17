@@ -1,10 +1,29 @@
 #!/bin/bash
 
-# ==================================================================================================
+
+# alo
+# manuel, juliana
+# einmal
+# suzammen
+# aabend
+
+# gute nacht
+# auf wiedersehen (formal)
+# tschüs
+# bis dann = hasta luego
+# bis spater = hasta más tarde
+# bis morgen = hasta mañana
+
+
+# ==============================================================================================
 # GLOBAL VARIABLES
-# ==================================================================================================
+# ==============================================================================================
 
 program_name="CP stress tester"
+my_exec=""
+brute_exec=""
+
+problem_file=""
 
 problem=""
 my_sol=""
@@ -15,9 +34,10 @@ result=""
 next_interface=0
 valid_input=0
 
-# ==================================================================================================
+# ==============================================================================================
 # GLOBAL CONSTANTS
-# ==================================================================================================
+# ==============================================================================================
+
 end_program=255
 form_interface=0
 form_help_interface=1
@@ -51,30 +71,6 @@ form_error_type=0
 : "${SIG_KILL=9}"
 : "${SIG_TERM=15}"
 
-reset="\033[0m"
-black="\033[30m"
-red="\033[31m"
-green="\033[32m"
-yellow="\033[33m"
-blue="\033[34m"
-magenta="\033[35m"
-cyan="\033[36m"
-white="\033[37m"
-black_bg="\033[40m"
-red_bg="\033[41m"
-green_bg="\033[42m"
-yellow_bg="\033[43m"
-blue_bg="\033[44m"
-magenta_bg="\033[45m"
-cyan_bg="\033[46m"
-white_bg="\033[47m"
-default_bg="\033[49m"
-bold="\033[1m"
-underline="\033[4m"
-inverse="\033[7m"
-bold_off="\033[21m"
-underline_off="\033[24m"
-inverse_off="\033[27m"
 
 # ==============================================================================================
 # END GLOBAL SCOPE
@@ -282,22 +278,93 @@ form() {
 	done
 }
 
-# alo
-# manuel, juliana
-# einmal
-# suzammen
-# aabend
+retrieve_values() {
+	echo "inside retrieve values"
+	sleep 1
 
-# gute nacht
-# auf wiedersehen (formal)
-# tschüs
-# bis dann = hasta luego
-# bis spater = hasta más tarde
-# bis morgen = hasta mañana
+	# Attempt to extract values from the file
+	my_sol=$(grep '^my_sol=' "${problem_file}" | sed 's/^my_sol="//; s/"$//')
+	brute_sol=$(grep '^brute_sol=' "${problem_file}" | sed 's/^brute_sol="//; s/"$//')
+
+	echo "--->my_sol : ${my_sol}"
+	echo "--->brute_sol : ${brute_sol}"
+	sleep 1
+
+	# Check if the values were successfully retrieved
+	if [ -z "${my_sol}" ]; then
+			echo "Error: 'my_sol' not found or empty in ${problem_file}"
+			return 1
+	fi
+
+	if [ -z "${brute_sol}" ]; then
+			echo "Error: 'brute_sol' not found or empty in ${problem_file}"
+			return 1
+	fi
+
+	return 0
+}
+
+resolve_exec_command() {
+		echo "inside resolve_exec_command"
+		echo "${1}"
+		echo "${2}"
+    solution="$1"  # The file name (my_sol or brute_sol)
+    exec_var="$2"  # The variable name to set (my_exec or brute_exec)
+
+		basename="${solution%.*}"
+		echo "basename= ${basename}"
+		ext="${solution##*.}"
+
+    case "${ext}" in
+        py)
+				echo "exec_var: ${exec_var}"
+				eval "${exec_var}=\"python3 ${solution}\""
+				echo "exec_var: ${exec_var}"
+				;;
+        cpp)
+						echo "cppppppppppppppppppppppppppp"
+						echo "exec_var: ${exec_var}"
+            if [[ -f "./${basename}.out" ]]; then
+								echo "AAAAAAAAAAAAAAAAAAAAAA"
+                eval "${exec_var}=\"./${basename}.out\""
+            elif [[ -f "./${basename}" ]]; then
+								echo "BBBBBBBBBBBBBBBBBBBBBB"
+                eval "${exec_var}=\"./${basename}\""
+            else
+                g++-11 -std=c++20 "${solution}" -o "${basename}.out"
+								eval "${exec_var}=\"./${basename}.out\""
+            fi
+						echo "exec_var: ${exec_var}"
+            ;;
+        java) javac "${solution}" && eval "${exec_var}=\"java ${basename}.java\"" ;;
+        go) eval "${exec_var}=\"go run ${solution}\"" ;;
+        kt) kotlinc "${solution}" -include-runtime -d "${basename}.jar" && eval "${exec_var}=\"java -jar ${basename}.jar\"" ;;
+        *) echo "Unsupported file type for ${solution}: ${solution##*.}" && exit 1 ;;
+    esac
+}
+
 
 checker() {
+	clear
+	echo "INSIDE CHECKER"
+	sleep 1
+
 	file="$1"
-	filename=$(basename "${file}" .py)
+	problem_file=${file}
+
+	my_sol=""
+	brute_sol=""
+	my_exec=""
+	brute_exec=""
+
+	echo "gah"
+	sleep 1
+
+	retrieve_values
+	echo "after retrieve_values"
+	echo "--->my_sol : ${my_sol}"
+	echo "--->brute_sol : ${brute_sol}"
+
 	RNG_exec="python3 ${file}"
 
 	if [[ ! -f ${file} ]]; then # Check if the file exists
@@ -305,76 +372,43 @@ checker() {
 		exit 1
 	fi
 
-	my_sol=""
-	brute_sol=""
-	my_exec=""
-	brute_exec=""
+	echo "gah"
+	sleep 2
+	resolve_exec_command "${my_sol}" "my_exec"
+	echo "after first"
+	echo "my_exec: ${my_exec}"
+	resolve_exec_command "${brute_sol}" "brute_exec"
+	echo "after second"
+	echo "brute_exec: ${brute_exec}"
 
-	while IFS= read -r line; do # Read the last two lines and extract the values
-		eval "${line}"
-	done < <(tail -n 2 "${file}")
+	echo "gah2"
+	sleep 2
 
-	case "${my_sol##*.}" in
-	py) my_exec="python3 ${my_sol}" ;;
-	cpp)
-		if [[ ! -f "./my_sol.out" ]]; then
-			my_exec="./my_sol.out"
-		elif [[ ! -f "./my_sol" ]]; then
-			my_exec="./my_sol"
-		else
-			g++ "${my_sol}" -o my_sol.out && my_exec="./my_sol.out"
-		fi
-		;;
-	java) javac "${my_sol}" && my_exec="java ${my_sol%.java}" ;;
-	go) my_exec="go run ${my_sol}" ;;
-	kt) kotlinc "${my_sol}" -include-runtime -d my_sol.jar && my_exec="java -jar my_sol.jar" ;;
-	*) echo "Unsupported file type for my_sol: ${my_sol##*.}" && exit 1 ;;
-	esac
+	clear
+	echo "my_exec: ${my_exec}"
+	echo "brute_exec: ${brute_exec}"
+	sleep 2
 
-	case "${brute_sol##*.}" in
-	py) brute_exec="python3 ${brute_sol}" ;;
-	cpp)
-		if [[ ! -f "./brute_solution.out" ]]; then
-			brute_exec="./brute_solution.out"
-		elif [[ ! -f "./brute_solution" ]]; then
-			brute_exec="./brute_solution"
-		else
-			g++ "${brute_sol}" -o my_sol.out && brute_exec="./my_sol.out"
-		fi
-		;;
-	java) javac "${brute_sol}" && brute_exec="java ${brute_sol%.java}" ;;
-	go) brute_exec="go run ${brute_sol}" ;;
-	kt) kotlinc "${brute_sol}" -include-runtime -d brute_sol.jar && brute_exec="java -jar brute_sol.jar" ;;
-	*) echo "Unsupported file type for brute_sol: ${brute_sol##*.}" && exit 1 ;;
-	esac
 
 	set -e
 
 	for ((i = 1; ; ++i)); do
-		RNG_exec "${i}" >input_file
-		my_exec <input_file >myAnswer
-		brute_exec <input_file >correctAnswer
-		diff -Z myAnswer correctAnswer >/dev/null || break
+		${RNG_exec} "${i}" >input_file
+		${my_exec} <input_file >answer_my
+		${brute_exec} <input_file >answer_correct
+		diff -Z answer_my answer_correct >/dev/null || break
 		echo "Passed test: ${i}"
 	done
 
 	echo "WA on the following test:"
 	cat input_file
 	echo "Your answer is:"
-	cat myAnswer
+	cat answer_my
 	echo "Correct answer is:"
-	cat correctAnswer
+	cat answer_correct
 }
 
-RNG_Basic=1
-RNG_n_list=2
-RNG_n_Matrix=3
-RNG_nxm_Matrix=4
-RNG_test_casing=5
-RNG_Graph_adj=6
-RNG_Graph_matrix=7
 
-problem_file=""
 fill_common() {
 	cat <<'EOF' >"${problem_file}"
 import random
@@ -473,23 +507,35 @@ fill_Graph_matrix() {
 EOF
 }
 
+fill_with_var_data() {
+	cat <<EOF >>"${problem_file}"
+# -------------------------------------------------------------------------
+# DO NOT TOUCH THESE LINES
+# -------------------------------------------------------------------------
+
+my_sol="${my_sol}"
+brute_sol="${brute_sol}"
+
+EOF
+}
+
+
 create_RNG_file_according_to_templates() {
-	problem_file="RNG_${problem}.py"  # Define problem file
-	fill_common  # Add common code
+	problem_file="RNG_${problem}.py"
+	fill_common
 
 	# Read tempfile content as a single line
 	input=$(<"${tempfile}")
 	
-	# Split the line into an array using quotes and spaces as delimiters
-	IFS='"' read -ra parts <<< "$input"
+	IFS='"' read -ra parts <<< "${input}"
 
 	# Process each part
 	for part in "${parts[@]}"; do
 		# Trim leading and trailing whitespace
-		part=$(echo "$part" | xargs)
+		part=$(echo "${part}" | xargs)
 		
 		# Skip empty parts
-		[ -z "$part" ] && continue
+		[ -z "${part}" ] && continue
 
 		# Debugging output
 		echo "Processing part: ${part}"
@@ -522,11 +568,38 @@ create_RNG_file_according_to_templates() {
 			;;
 		esac
 	done
+
+	fill_with_var_data
 }
+
 editor() {
-	true
+	DIALOG_ERROR=254
+	export DIALOG_ERROR
+
+# setup edit
 	clear
-	echo "Bye world"
+	sleep 1
+	echo "CONTENT OF ${problem_file}:"
+	cat "${problem_file}"
+	sleep 1
+
+	cat "${problem_file}" > "${tempfile}"
+
+	${DIALOG} --title "EDIT BOX" \
+		--fixed-font --editbox "${tempfile}" 0 0 2>"${problem_file}"
+	local return_code=$?
+
+	clear
+
+	if [[ ${return_code} == 0 ]]; then
+			echo "Editing completed. Changes saved to ${problem_file}."
+	elif [[ ${return_code} == 1 ]]; then
+			echo "Editing canceled."
+	else
+			echo "An error occurred."
+	fi
+
+	sleep 1
 	exit
 }
 
