@@ -9,7 +9,7 @@ Requirements:
 
 ```bash
   sudo apt install dialog
-```
+``` 
 
 ## How to use it?
 
@@ -46,6 +46,16 @@ Anyways, i also created this tool to help new programmers to test their solution
 Mainly, i was thinking of the "Concurso Escolar de Programación CEP", i want as many of them to don't feel distressed and don't give up.
 
 
+## Extra recommendations
+
+Use Address sanitizer,
+I created this video explaining how to use it in vscode.
+I recommend watching this video ....
+
+Learn Mathematics with mathanki
 
 
+## Buy me a coffe/apicito!
+
+here is my yape QR
 
