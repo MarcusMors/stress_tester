@@ -3,9 +3,12 @@ dialog-examples/*
 dialog-examples
 .vscode/*
 .trunk/*
-A.cpp
-A_brute.cpp
-RNG_A.py
+
+*.log
+
+# A.cpp
+# A_brute.cpp
+# RNG_A.py
 log.txt
 
 # Prerequisites
