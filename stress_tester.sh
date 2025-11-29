@@ -106,53 +106,41 @@ decho(){
 # END DEBUG FUNCTIONS
 # ==============================================================================================
 
+# Basic classifier required by your other functions
+# Returns: 0=Invalid, 1=Basename only, 2=Extension only, 3=Both
 classify_filename() {
-    local fname="$1"
-    local flags=0
-
-    # INVALID: empty, ends with dot, or starts with dot + has another dot
-    if [[ -z "$fname" || "$fname" =~ \.$ || "$fname" =~ ^\.[^.]*\. ]]; then
+    local fn="$1"
+    local mask=0
+    
+    # Check for invalid characters (slash, etc) or empty
+    if [[ -z "$fn" || "$fn" == *"/"* ]]; then
         echo 0
         return
     fi
 
-    # Mark as valid
-    ((flags |= 4))
-
-    # EXTENSION ONLY: ^\.[^.]+$
-    if [[ "$fname" =~ ^\.[^.]+$ ]]; then
-        ((flags |= 2))  # has_ext=1, has_base=0
-        echo "$flags"
-        return
+    # Check for Basename (anything before the last dot)
+    if [[ "$fn" == *.* && "${fn%.*}" != "" ]]; then
+        ((mask |= 1)) # Has basename part before dot
+    elif [[ "$fn" != *.* ]]; then
+        ((mask |= 1)) # No dot, pure basename
     fi
 
-    # BASENAME ONLY: ^[^.]+$
-    if [[ "$fname" =~ ^[^.]+$ ]]; then
-        ((flags |= 1))  # has_base=1, has_ext=0
-        echo "$flags"
-        return
+    # Check for Extension (anything after the last dot)
+    if [[ "$fn" == *.* && "${fn##*.}" != "" ]]; then
+        ((mask |= 2))
     fi
 
-    # FULL FILENAME: ^[^.]+\.[^.]+$
-    if [[ "$fname" =~ ^[^.]+\.[^.]+$ ]]; then
-        ((flags |= 3))  # has_base=1, has_ext=1
-        echo "$flags"
-        return
-    fi
-
-    # Anything else is invalid
-    echo 0
+    echo "$mask"
 }
-
-# ---------- Your Requested API (1=true, 0=false) ----------
 
 has_basename() {
     local var_name="$1"
-    local true_ret="${2:-1}"
+    local true_ret="${2:-1}"  # Default to 1 if no flag provided
     local value="${!var_name}"
-    local category=$(classify_filename "$value")
+    local category
+    category=$(classify_filename "$value")
 
-    if ((category & 1)); then
+    if (( category & 1 )); then
         return "$true_ret"
     else
         return 0
@@ -163,9 +151,10 @@ has_extension() {
     local var_name="$1"
     local true_ret="${2:-1}"
     local value="${!var_name}"
-    local category=$(classify_filename "$value")
+    local category
+    category=$(classify_filename "$value")
 
-    if ((category & 2)); then
+    if (( category & 2 )); then
         return "$true_ret"
     else
         return 0
@@ -176,29 +165,20 @@ is_invalid() {
     local var_name="$1"
     local true_ret="${2:-1}"
     local value="${!var_name}"
-    local category=$(classify_filename "$value")
+    local category
+    category=$(classify_filename "$value")
 
-    if ((category == 0)); then
+    # If 0, it is invalid
+    if (( category == 0 )); then
         return "$true_ret"
     else
         return 0
     fi
 }
 
-copy_assoc_array() {
-    declare -n src="$1"
-    declare -n dst="$2"
-
-    for key in "${!src[@]}"; do
-        dst["$key"]="${src[$key]}"
-    done
-}
-
 is_empty() {
     local var_name="$1"
-    local true_ret="${2:-1}"   # default return value = 1
-
-    # expand the variable by name
+    local true_ret="${2:-1}"
     local value="${!var_name}"
 
     if [[ -z "$value" ]]; then
@@ -211,7 +191,6 @@ is_empty() {
 file_exists() {
     local var_name="$1"
     local true_ret="${2:-1}"
-
     local value="${!var_name}"
 
     if [[ -f "$value" ]]; then
@@ -219,6 +198,26 @@ file_exists() {
     else
         return 0
     fi
+}
+
+copy_assoc_array() {
+    local src_name="$1"
+    local dst_name="$2"
+    # Use namerefs for indirect access
+    declare -n src="$src_name"
+    declare -n dst="$dst_name"
+
+    # Iterate keys of source
+    for key in "${!src[@]}"; do
+        dst["$key"]="${src[$key]}"
+    done
+}
+
+# Helper to remove _brute suffix if present
+strip_brute_suffix() {
+    local str="$1"
+    # Removes _brute from the end of the string
+    echo "${str%_brute}"
 }
 
 # ==============================================================================================
@@ -252,234 +251,175 @@ check_file_exists() {
 }
 
 calculate_form_flags(){
-	local arr_name="$1"
-	shift
-	my_sol="$1"
-	brute_sol="$2"
-	problem="$3"
+    local arr_name="$1"
+    shift
+    # 1. Capture Inputs
+    local _my_sol="$1"
+    local _brute_sol="$2"
+    local _problem="$3"
 
-	f_is_empty=1
-	f_file_exists=2         
-	f_has_basename=4         
-	f_has_extension=8         
-	f_is_invalid=16      
-	f_inferable=32      
-	
-	is_empty my_sol f_is_empty; f_my_sol=$?
-	is_empty brute_sol f_is_empty; f_brute_sol=$?
-	is_empty problem f_is_empty; f_problem=$?
+    # 2. Store originals to detect changes later (for is_inferable)
+    local orig_my_sol="$_my_sol"
+    local orig_brute_sol="$_brute_sol"
+    local orig_problem="$_problem"
 
+    # 3. Define Flags (as used in your system)
+    local F_EMPTY=1
+    local F_FILE_EXISTS=2
+    local F_HAS_BASENAME=4
+    local F_HAS_EXTENSION=8
+    local F_IS_INVALID=16
+    local F_INFERABLE=32
 
-	file_exists my_sol f_file_exists; f_my_sol=$((f_my_sol | $?))
-	file_exists brute_sol f_file_exists; f_brute_sol=$((f_brute_sol | $?))
-	problem_file="RNG_${problem}.py"
-	file_exists problem_file f_file_exists; f_problem=$((f_problem | $?))
+    # =========================================================
+    # PHASE A: INFERENCE LOGIC (String Manipulation)
+    # =========================================================
+    # We use direct string checks here for logic, not the helper functions,
+    # to keep the logic flow linear and clean.
+    
+    # -- Analyze Raw Components --
+    local my_base="${_my_sol%.*}"
+    local my_ext="${_my_sol##*.}"
+    local brute_base="${_brute_sol%.*}"
+    local brute_ext="${_brute_sol##*.}"
+    
+    # Check what we actually have (Simple booleans for logic)
+    local has_my_base=0; [[ "$_my_sol" != *.* || -n "$my_base" ]] && has_my_base=1
+    local has_my_ext=0;  [[ "$_my_sol" == *.* && -n "$my_ext" ]] && has_my_ext=1
+    local has_br_base=0; [[ "$_brute_sol" != *.* || -n "$brute_base" ]] && has_br_base=1
+    local has_br_ext=0;  [[ "$_brute_sol" == *.* && -n "$brute_ext" ]] && has_br_ext=1
 
-	has_basename my_sol f_has_basename; f_my_sol=$((f_my_sol | $?))
-	has_extension my_sol f_has_extension; f_my_sol=$((f_my_sol | $?))
-	is_invalid my_sol f_is_invalid; f_my_sol=$((f_my_sol | $?))
-	
-	has_basename brute_sol f_has_basename; f_brute_sol=$((f_brute_sol | $?))
-	has_extension brute_sol f_has_extension; f_brute_sol=$((f_brute_sol | $?))
-	is_invalid brute_sol f_is_invalid; f_brute_sol=$((f_brute_sol | $?))
+    # -- 1. Fix My Sol --
+    if [[ -n "$_my_sol" && "$_my_sol" != */* ]]; then
+        # If Base only, try to steal extension from brute
+        if (( has_my_base && !has_my_ext && has_br_ext )); then
+            _my_sol="${_my_sol}.${brute_ext}"
+        fi
+        # If Extension only (starts with dot), try to steal base from brute
+        if (( !has_my_base && has_my_ext && has_br_base )); then
+            local clean_base
+            clean_base="$(strip_brute_suffix "$brute_base")"
+            [[ -n "$clean_base" ]] && _my_sol="${clean_base}.${my_ext}"
+        fi
+    fi
 
-	local basename="${my_sol%.*}"
-	local brute_basename="${brute_sol%.*}"
+    # -- 2. Fix Brute Sol --
+    # Update my_sol info in case it changed
+    my_ext="${_my_sol##*.}" 
+    [[ "$_my_sol" == *.* && -n "$my_ext" ]] && has_my_ext=1 || has_my_ext=0
 
-		########### Infer calculations for my_sol ###########
-	# Determine if my_sol is not empty and not invalid (is_empty returns 0 when NOT empty)
-	is_empty my_sol; local my_empty_rc=$?
-	is_invalid my_sol f_is_invalid; local my_invalid_rc=$?
+    if [[ -z "$_brute_sol" || "$_brute_sol" == */* ]]; then
+        # Brute empty or invalid: create from My Sol
+        has_basename _my_sol; local chk_my_base=$? # Use helper to be sure
+        if (( chk_my_base )); then # If my_sol has base (flag returned)
+             local new_base="${_my_sol%.*}_brute"
+             if (( has_my_ext )); then
+                 _brute_sol="${new_base}.${my_ext}"
+             else
+                 _brute_sol="${new_base}"
+             fi
+        fi
+    else
+        # Brute exists but might be partial
+        if (( has_br_base && !has_br_ext && has_my_ext )); then
+            _brute_sol="${_brute_sol}.${my_ext}"
+        fi
+        if (( !has_br_base && has_br_ext )); then
+             has_basename _my_sol; local chk_my_base=$?
+             if (( chk_my_base )); then
+                local base="${_my_sol%.*}"
+                _brute_sol="${base}.${brute_ext}"
+             fi
+        fi
+    fi
 
-	if (( my_empty_rc == 0 && my_invalid_rc == 0 )); then
-		# my_sol has something and is not invalid
-		# Case A: has both basename and extension -> inferable
-		has_basename my_sol; local my_has_basename=$?
-		has_extension my_sol; local my_has_extension=$?
-		if (( my_has_basename != 0 && my_has_extension != 0 )); then
-			f_my_sol=$(( f_my_sol | f_inferable ))
-		else
-			# Case B: basename but no extension -> try to take extension from brute_sol
-			if (( my_has_basename != 0 && my_has_extension == 0 )); then
-				has_extension brute_sol; local brute_has_ext=$?
-				if (( brute_has_ext != 0 )); then
-					# attach brute extension to my_sol
-					local brute_ext="${brute_sol##*.}"
-					my_sol="${my_sol%.*}.${brute_ext}"
-					f_my_sol=$(( f_my_sol | f_inferable ))
-				fi
-			fi
+    # -- 3. Fix Problem --
+    if [[ -z "$_problem" ]]; then
+        # Try my_sol first
+        has_basename _my_sol; local chk_my_base=$?
+        if (( chk_my_base )); then
+            _problem="${_my_sol%.*}"
+        else
+            # Try brute_sol
+            has_basename _brute_sol; local chk_br_base=$?
+            if (( chk_br_base )); then
+                local raw="${_brute_sol%.*}"
+                _problem="$(strip_brute_suffix "$raw")"
+            fi
+        fi
+    fi
 
-			# Case C: extension but no basename (e.g. ".py") -> use brute basename (strip _brute if present)
-			if (( my_has_basename == 0 && my_has_extension != 0 )); then
-				has_basename brute_sol; local brute_has_base=$?
-				if (( brute_has_base != 0 )); then
-					local brute_base="${brute_sol%.*}"
-					local base_no_brute
-					base_no_brute="$(strip_brute_suffix "$brute_base")"
-					# if base_no_brute is not empty, construct my_sol
-					if [[ -n "$base_no_brute" ]]; then
-						local my_ext="${my_sol##*.}"
-						my_sol="${base_no_brute}.${my_ext}"
-						f_my_sol=$(( f_my_sol | f_inferable ))
-					fi
-				fi
-			fi
-		fi
-	else
-		# my_sol is empty or invalid -> try to infer from brute_sol
-		is_empty brute_sol; local brute_empty_rc=$?
-		is_invalid brute_sol f_is_invalid; local brute_invalid_rc=$?
+    # =========================================================
+    # PHASE B: UPDATE GLOBALS
+    # =========================================================
+    
+    final_my_sol_file="$_my_sol"
+    final_brute_sol_file="$_brute_sol"
+    final_problem_file="$_problem"
 
-		if (( brute_empty_rc == 0 && brute_invalid_rc == 0 )); then
-			# brute has something and is valid -> try to derive my_sol from brute_sol
-			has_basename brute_sol; local brute_has_basename=$?
-			has_extension brute_sol; local brute_has_ext=$?
-			if (( brute_has_basename != 0 )); then
-				local brute_base="${brute_sol%.*}"
-				local base_no_brute
-				base_no_brute="$(strip_brute_suffix "$brute_base")"
-				if [[ -n "$base_no_brute" ]]; then
-					if (( brute_has_ext != 0 )); then
-						local brute_ext="${brute_sol##*.}"
-						my_sol="${base_no_brute}.${brute_ext}"
-					else
-						# brute has basename only -> just use base_no_brute
-						my_sol="${base_no_brute}"
-					fi
-					f_my_sol=$(( f_my_sol | f_inferable ))
-				fi
-			fi
-		fi
-	fi
+    # =========================================================
+    # PHASE C: CALCULATE FLAGS
+    # =========================================================
 
-	# If we added inference for my_sol, recompute its flags (clear & recompute)
-	is_empty my_sol f_is_empty; f_my_sol=$?
-	file_exists my_sol f_file_exists; f_my_sol=$(( f_my_sol | $? ))
-	is_invalid my_sol f_is_invalid; f_my_sol=$(( f_my_sol | $? ))
-	has_basename my_sol f_has_basename; f_my_sol=$(( f_my_sol | $? ))
-	has_extension my_sol f_has_extension; f_my_sol=$(( f_my_sol | $? ))
-	# Note: we keep f_inferable bit if it was set earlier
+    # We use a loop or internal function to calculate flags for the 3 files
+    # This ensures we don't repeat the flag logic 3 times.
 
-	########### Infer calculations for brute_sol ###########
-	is_empty brute_sol; local brute_empty_rc2=$?
-	is_invalid brute_sol f_is_invalid; local brute_invalid_rc2=$?
+    # Usage: get_flags "GLOBAL_VAR_NAME" "ORIGINAL_VALUE" "IS_PROBLEM_FILE_BOOL"
+    _get_flags() {
+        local var_name="$1"
+        local orig_val="$2"
+        local is_prob="$3"
+        local flags=0
+        local current_val="${!var_name}"
 
-	if (( brute_empty_rc2 == 0 && brute_invalid_rc2 == 0 )); then
-		# brute has something and valid
-		has_basename brute_sol; local b_has_base=$?
-		has_extension brute_sol; local b_has_ext=$?
+        # 1. Empty?
+        is_empty "$var_name" $F_EMPTY
+        flags=$(( flags | $? ))
 
-		if (( b_has_base != 0 && b_has_ext != 0 )); then
-			f_brute_sol=$(( f_brute_sol | f_inferable ))
-		else
-			# if brute has basename and no ext -> try to use my_sol extension
-			if (( b_has_base != 0 && b_has_ext == 0 )); then
-				has_extension my_sol; local my_has_ext2=$?
-				if (( my_has_ext2 != 0 )); then
-					local my_ext="${my_sol##*.}"
-					brute_sol="${brute_sol%.*}.${my_ext}"
-					f_brute_sol=$(( f_brute_sol | f_inferable ))
-				fi
-			fi
+        # 2. Exists?
+        # IMPORTANT: file_exists expects a variable name.
+        # We must create a temporary variable with the ACTUAL path to check.
+        local path_check="$current_val"
+        if [[ "$is_prob" == "1" && -n "$current_val" ]]; then
+            path_check="RNG_${current_val}.py"
+        fi
+        
+        # Pass the NAME of 'path_check' to the helper
+        local temp_var_name="path_check"
+        file_exists "$temp_var_name" $F_FILE_EXISTS
+        flags=$(( flags | $? ))
 
-			# if brute has no basename but has extension -> try to use my_sol basename
-			if (( b_has_base == 0 && b_has_ext != 0 )); then
-				has_basename my_sol; local my_has_base2=$?
-				if (( my_has_base2 != 0 )); then
-					local my_base="${my_sol%.*}"
-					# use my_base + brute ext
-					local brute_ext2="${brute_sol##*.}"
-					brute_sol="${my_base}.${brute_ext2}"
-					f_brute_sol=$(( f_brute_sol | f_inferable ))
-				fi
-			fi
-		fi
-	else
-		# brute is empty -> try to create brute from my_sol by adding _brute suffix to basename
-		is_empty my_sol; local my_empty_rc2=$?
-		is_invalid my_sol f_is_invalid; local my_invalid_rc2=$?
-		if (( my_empty_rc2 == 0 && my_invalid_rc2 == 0 )); then
-			has_basename my_sol; local my_has_base3=$?
-			has_extension my_sol; local my_has_ext3=$?
-			if (( my_has_base3 != 0 )); then
-				local my_base3="${my_sol%.*}"
-				local new_brute_base="${my_base3}_brute"
-				if (( my_has_ext3 != 0 )); then
-					local my_ext3="${my_sol##*.}"
-					brute_sol="${new_brute_base}.${my_ext3}"
-				else
-					brute_sol="${new_brute_base}"
-				fi
-				f_brute_sol=$(( f_brute_sol | f_inferable ))
-			fi
-		fi
-	fi
+        # 3. Syntax checks
+        has_basename  "$var_name" $F_HAS_BASENAME;  flags=$(( flags | $? ))
+        has_extension "$var_name" $F_HAS_EXTENSION; flags=$(( flags | $? ))
+        is_invalid    "$var_name" $F_IS_INVALID;    flags=$(( flags | $? ))
 
-	# If we added inference for brute_sol, recompute its flags
-	is_empty brute_sol f_is_empty; f_brute_sol=$?
-	file_exists brute_sol f_file_exists; f_brute_sol=$(( f_brute_sol | $? ))
-	is_invalid brute_sol f_is_invalid; f_brute_sol=$(( f_brute_sol | $? ))
-	has_basename brute_sol f_has_basename; f_brute_sol=$(( f_brute_sol | $? ))
-	has_extension brute_sol f_has_extension; f_brute_sol=$(( f_brute_sol | $? ))
+        # 4. Inferable? (If current value differs from original)
+        if [[ "$current_val" != "$orig_val" ]]; then
+            flags=$(( flags | $F_INFERABLE ))
+        fi
 
-	########### Problem inference ###########
-	# If problem empty, try to infer from my_sol or brute_sol
-	is_empty problem; local prob_empty_rc=$?
-	if ((f_problem & f_is_empty)); then
-		# problem is not empty -> nothing to do
-		:
-	else
-		# problem empty -> try to infer
-		if (( (f_my_sol & f_is_empty) == 0)); then
-			has_basename my_sol; local my_has_base4=$?
-			if (( my_has_base4 != 0 )); then
-				# take basename of my_sol
-				problem="${my_sol%.*}"
-				# update problem flags
-				is_empty problem f_is_empty; f_problem=$?
-				problem_file="RNG_${problem}.py"
-				file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
-				f_problem=$(( f_problem | f_inferable ))
-			fi
-		else
-			# try brute_sol
-			if (( (f_brute_sol & f_is_empty) == 0 )); then
-				has_basename brute_sol; local brute_has_base3=$?
-				if (( brute_has_base3 != 0 )); then
-					local brute_base3="${brute_sol%.*}"
-					problem="$(strip_brute_suffix "$brute_base3")"
-					is_empty problem f_is_empty; f_problem=$?
-					problem_file="RNG_${problem}.py"
-					file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
-					f_problem=$(( f_problem | f_inferable ))
-				fi
-			fi
-		fi
-	fi
+        echo "$flags"
+    }
 
-	# Final recompute (ensure all bits reflect final strings)
-	is_empty my_sol f_is_empty; f_my_sol=$?
-	file_exists my_sol f_file_exists; f_my_sol=$(( f_my_sol | $? ))
-	is_invalid my_sol f_is_invalid; f_my_sol=$(( f_my_sol | $? ))
-	has_basename my_sol f_has_basename; f_my_sol=$(( f_my_sol | $? ))
-	has_extension my_sol f_has_extension; f_my_sol=$(( f_my_sol | $? ))
+    local f_my
+    f_my=$(_get_flags "final_my_sol_file" "$orig_my_sol" "0")
 
-	is_empty brute_sol f_is_empty; f_brute_sol=$?
-	file_exists brute_sol f_file_exists; f_brute_sol=$(( f_brute_sol | $? ))
-	is_invalid brute_sol f_is_invalid; f_brute_sol=$(( f_brute_sol | $? ))
-	has_basename brute_sol f_has_basename; f_brute_sol=$(( f_brute_sol | $? ))
-	has_extension brute_sol f_has_extension; f_brute_sol=$(( f_brute_sol | $? ))
+    local f_brute
+    f_brute=$(_get_flags "final_brute_sol_file" "$orig_brute_sol" "0")
 
-	is_empty problem f_is_empty; f_problem=$?
-	problem_file="RNG_${problem}.py"
-	file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
+    local f_prob
+    f_prob=$(_get_flags "final_problem_file" "$orig_problem" "1")
 
-	# Fill destination array with the three flags
-	eval "$arr_name=()"
-	eval "$arr_name+=(\"$f_my_sol\")"
-	eval "$arr_name+=(\"$f_brute_sol\")"
-	eval "$arr_name+=(\"$f_problem\")"
+    # =========================================================
+    # PHASE D: RETURN
+    # =========================================================
+    
+    # Initialize array if not already done
+    eval "$arr_name=()"
+    eval "$arr_name+=($f_my)"
+    eval "$arr_name+=($f_brute)"
+    eval "$arr_name+=($f_prob)"
 }
 
 validate_form_input() {
