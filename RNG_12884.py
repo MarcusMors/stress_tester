@@ -17,18 +17,11 @@ def sprint(*args, end="\n"): my_print(*args,separator=" ",end=end)
 def csprint(*args, end="\n"): my_print(*args,separator=", ",end=end)
 def scprint(*args, end="\n"): my_print(*args,separator=" ,",end=end)
 
-#n_list
-n = random.randint(1, 10)  # Number of inputs
-sprint(n)
-
-for i in range(n):
-    sprint(random.randint(1, 10), " " ,end="")
-print()
+print(random.randint(1,1000))
 
 # -------------------------------------------------------------------------
 # DO NOT TOUCH THESE LINES
 # -------------------------------------------------------------------------
 
-my_sol="A.cpp"
-	brute_sol="A_brute.cpp"
-
+my_sol="12884.cpp"
+brute_sol="12884_brute.cpp"

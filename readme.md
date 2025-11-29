@@ -28,6 +28,12 @@ Requirements:
   sudo apt install dialog
 ``` 
 
+To use it as an executable and have it in path.
+```bash
+   chmod +x stress_tester.sh
+   sudo mv stress_tester.sh /usr/local/bin/stress_tester
+```
+
 ## How to use it?
 
 To create a Random Number Generator file and test config, just execute it. (The program creates the file in the current directory)
@@ -36,7 +42,7 @@ To create a Random Number Generator file and test config, just execute it. (The 
    stress_tester
 ```
 
-To stress test based on your Random Number Generator file and test config.
+To stress test based on your Random Number Generator file and test configuration.
 
 ```bash
    stress_tester RNG_<problem>.py
