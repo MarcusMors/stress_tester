@@ -263,7 +263,7 @@ calculate_form_flags(){
 	f_has_basename=4         
 	f_has_extension=8         
 	f_is_invalid=16      
-	f_inferenciable=32      
+	f_inferable=32      
 	
 	is_empty my_sol f_is_empty; f_my_sol=$?
 	is_empty brute_sol f_is_empty; f_brute_sol=$?
@@ -286,39 +286,200 @@ calculate_form_flags(){
 	local basename="${my_sol%.*}"
 	local brute_basename="${brute_sol%.*}"
 
-	########### Infer calculations ###########
-	# if my_sol is not empty && valid
-		# if my_sol has basename and extension: then inferable=f_is_inferenciable.
-		# if my_sol has basename and no extension: then my_sol=basename + extension of brute_sol, inferable=f_is_inferenciable
-		# if my_sol has no basename and extension: then my_sol=brute_sol without _brute + extension, inferable=f_is_inferenciable
-	# else # my_sol is empty
-		# mysol=brute_sol without _brute preffix if possible, else: it's not inferable; inferable=f_is_inferenciable
-	# fi
-	# if my_sol is inferenciable; then updated my_sol_exists and my_sol_empty and invalid=0
+		########### Infer calculations for my_sol ###########
+	# Determine if my_sol is not empty and not invalid (is_empty returns 0 when NOT empty)
+	is_empty my_sol; local my_empty_rc=$?
+	is_invalid my_sol f_is_invalid; local my_invalid_rc=$?
 
-	# if brute_sol is not empty && valid
-		# if brute_sol has basename and extension: then inferable=f_is_inferenciable.
-		# if brute_sol has basename and no extension: then brute_sol=basename + extension of my_sol, inferable=f_is_inferenciable
-		# if brute_sol has no basename and extension: then brute_sol=my_sol + extension, inferable=f_is_inferenciable
-	# else # brute_sol is empty
-		# brute_sol=my_sol with _brute preffix; inferable=f_is_inferenciable
-	# fi
+	if (( my_empty_rc == 0 && my_invalid_rc == 0 )); then
+		# my_sol has something and is not invalid
+		# Case A: has both basename and extension -> inferable
+		has_basename my_sol; local my_has_basename=$?
+		has_extension my_sol; local my_has_extension=$?
+		if (( my_has_basename != 0 && my_has_extension != 0 )); then
+			f_my_sol=$(( f_my_sol | f_inferable ))
+		else
+			# Case B: basename but no extension -> try to take extension from brute_sol
+			if (( my_has_basename != 0 && my_has_extension == 0 )); then
+				has_extension brute_sol; local brute_has_ext=$?
+				if (( brute_has_ext != 0 )); then
+					# attach brute extension to my_sol
+					local brute_ext="${brute_sol##*.}"
+					my_sol="${my_sol%.*}.${brute_ext}"
+					f_my_sol=$(( f_my_sol | f_inferable ))
+				fi
+			fi
 
-	# if brute_sol is inferenciable; then updated brute_sol_exists and brute_sol_empty and invalid=0
+			# Case C: extension but no basename (e.g. ".py") -> use brute basename (strip _brute if present)
+			if (( my_has_basename == 0 && my_has_extension != 0 )); then
+				has_basename brute_sol; local brute_has_base=$?
+				if (( brute_has_base != 0 )); then
+					local brute_base="${brute_sol%.*}"
+					local base_no_brute
+					base_no_brute="$(strip_brute_suffix "$brute_base")"
+					# if base_no_brute is not empty, construct my_sol
+					if [[ -n "$base_no_brute" ]]; then
+						local my_ext="${my_sol##*.}"
+						my_sol="${base_no_brute}.${my_ext}"
+						f_my_sol=$(( f_my_sol | f_inferable ))
+					fi
+				fi
+			fi
+		fi
+	else
+		# my_sol is empty or invalid -> try to infer from brute_sol
+		is_empty brute_sol; local brute_empty_rc=$?
+		is_invalid brute_sol f_is_invalid; local brute_invalid_rc=$?
 
-	# if problem is empty; then
-		# if my_sol is not empty; then problem=basename of my_sol and update problem_file_exists,problem_empty,inferable=f_is_inferenciable
-		# elif brute_sol is not empty; then problem=basename of brute_sol without _brute and update problem_file_exists,problem_empty,inferable=f_is_inferenciable
-		# fi
-	# fi
+		if (( brute_empty_rc == 0 && brute_invalid_rc == 0 )); then
+			# brute has something and is valid -> try to derive my_sol from brute_sol
+			has_basename brute_sol; local brute_has_basename=$?
+			has_extension brute_sol; local brute_has_ext=$?
+			if (( brute_has_basename != 0 )); then
+				local brute_base="${brute_sol%.*}"
+				local base_no_brute
+				base_no_brute="$(strip_brute_suffix "$brute_base")"
+				if [[ -n "$base_no_brute" ]]; then
+					if (( brute_has_ext != 0 )); then
+						local brute_ext="${brute_sol##*.}"
+						my_sol="${base_no_brute}.${brute_ext}"
+					else
+						# brute has basename only -> just use base_no_brute
+						my_sol="${base_no_brute}"
+					fi
+					f_my_sol=$(( f_my_sol | f_inferable ))
+				fi
+			fi
+		fi
+	fi
 
+	# If we added inference for my_sol, recompute its flags (clear & recompute)
+	is_empty my_sol f_is_empty; f_my_sol=$?
+	file_exists my_sol f_file_exists; f_my_sol=$(( f_my_sol | $? ))
+	is_invalid my_sol f_is_invalid; f_my_sol=$(( f_my_sol | $? ))
+	has_basename my_sol f_has_basename; f_my_sol=$(( f_my_sol | $? ))
+	has_extension my_sol f_has_extension; f_my_sol=$(( f_my_sol | $? ))
+	# Note: we keep f_inferable bit if it was set earlier
+
+	########### Infer calculations for brute_sol ###########
+	is_empty brute_sol; local brute_empty_rc2=$?
+	is_invalid brute_sol f_is_invalid; local brute_invalid_rc2=$?
+
+	if (( brute_empty_rc2 == 0 && brute_invalid_rc2 == 0 )); then
+		# brute has something and valid
+		has_basename brute_sol; local b_has_base=$?
+		has_extension brute_sol; local b_has_ext=$?
+
+		if (( b_has_base != 0 && b_has_ext != 0 )); then
+			f_brute_sol=$(( f_brute_sol | f_inferable ))
+		else
+			# if brute has basename and no ext -> try to use my_sol extension
+			if (( b_has_base != 0 && b_has_ext == 0 )); then
+				has_extension my_sol; local my_has_ext2=$?
+				if (( my_has_ext2 != 0 )); then
+					local my_ext="${my_sol##*.}"
+					brute_sol="${brute_sol%.*}.${my_ext}"
+					f_brute_sol=$(( f_brute_sol | f_inferable ))
+				fi
+			fi
+
+			# if brute has no basename but has extension -> try to use my_sol basename
+			if (( b_has_base == 0 && b_has_ext != 0 )); then
+				has_basename my_sol; local my_has_base2=$?
+				if (( my_has_base2 != 0 )); then
+					local my_base="${my_sol%.*}"
+					# use my_base + brute ext
+					local brute_ext2="${brute_sol##*.}"
+					brute_sol="${my_base}.${brute_ext2}"
+					f_brute_sol=$(( f_brute_sol | f_inferable ))
+				fi
+			fi
+		fi
+	else
+		# brute is empty -> try to create brute from my_sol by adding _brute suffix to basename
+		is_empty my_sol; local my_empty_rc2=$?
+		is_invalid my_sol f_is_invalid; local my_invalid_rc2=$?
+		if (( my_empty_rc2 == 0 && my_invalid_rc2 == 0 )); then
+			has_basename my_sol; local my_has_base3=$?
+			has_extension my_sol; local my_has_ext3=$?
+			if (( my_has_base3 != 0 )); then
+				local my_base3="${my_sol%.*}"
+				local new_brute_base="${my_base3}_brute"
+				if (( my_has_ext3 != 0 )); then
+					local my_ext3="${my_sol##*.}"
+					brute_sol="${new_brute_base}.${my_ext3}"
+				else
+					brute_sol="${new_brute_base}"
+				fi
+				f_brute_sol=$(( f_brute_sol | f_inferable ))
+			fi
+		fi
+	fi
+
+	# If we added inference for brute_sol, recompute its flags
+	is_empty brute_sol f_is_empty; f_brute_sol=$?
+	file_exists brute_sol f_file_exists; f_brute_sol=$(( f_brute_sol | $? ))
+	is_invalid brute_sol f_is_invalid; f_brute_sol=$(( f_brute_sol | $? ))
+	has_basename brute_sol f_has_basename; f_brute_sol=$(( f_brute_sol | $? ))
+	has_extension brute_sol f_has_extension; f_brute_sol=$(( f_brute_sol | $? ))
+
+	########### Problem inference ###########
+	# If problem empty, try to infer from my_sol or brute_sol
+	is_empty problem; local prob_empty_rc=$?
+	if ((f_problem & f_is_empty)); then
+		# problem is not empty -> nothing to do
+		:
+	else
+		# problem empty -> try to infer
+		if (( (f_my_sol & f_is_empty) == 0)); then
+			has_basename my_sol; local my_has_base4=$?
+			if (( my_has_base4 != 0 )); then
+				# take basename of my_sol
+				problem="${my_sol%.*}"
+				# update problem flags
+				is_empty problem f_is_empty; f_problem=$?
+				problem_file="RNG_${problem}.py"
+				file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
+				f_problem=$(( f_problem | f_inferable ))
+			fi
+		else
+			# try brute_sol
+			if (( (f_brute_sol & f_is_empty) == 0 )); then
+				has_basename brute_sol; local brute_has_base3=$?
+				if (( brute_has_base3 != 0 )); then
+					local brute_base3="${brute_sol%.*}"
+					problem="$(strip_brute_suffix "$brute_base3")"
+					is_empty problem f_is_empty; f_problem=$?
+					problem_file="RNG_${problem}.py"
+					file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
+					f_problem=$(( f_problem | f_inferable ))
+				fi
+			fi
+		fi
+	fi
+
+	# Final recompute (ensure all bits reflect final strings)
+	is_empty my_sol f_is_empty; f_my_sol=$?
+	file_exists my_sol f_file_exists; f_my_sol=$(( f_my_sol | $? ))
+	is_invalid my_sol f_is_invalid; f_my_sol=$(( f_my_sol | $? ))
+	has_basename my_sol f_has_basename; f_my_sol=$(( f_my_sol | $? ))
+	has_extension my_sol f_has_extension; f_my_sol=$(( f_my_sol | $? ))
+
+	is_empty brute_sol f_is_empty; f_brute_sol=$?
+	file_exists brute_sol f_file_exists; f_brute_sol=$(( f_brute_sol | $? ))
+	is_invalid brute_sol f_is_invalid; f_brute_sol=$(( f_brute_sol | $? ))
+	has_basename brute_sol f_has_basename; f_brute_sol=$(( f_brute_sol | $? ))
+	has_extension brute_sol f_has_extension; f_brute_sol=$(( f_brute_sol | $? ))
+
+	is_empty problem f_is_empty; f_problem=$?
+	problem_file="RNG_${problem}.py"
+	file_exists problem_file f_file_exists; f_problem=$(( f_problem | $? ))
+
+	# Fill destination array with the three flags
 	eval "$arr_name=()"
-	items=(f_my_sol,f_brute_sol,f_problem)
-	
-	# Fill array with parameters
-	for item in "$@"; do
-			eval "$arr_name+=(\"$item\")"
-	done
+	eval "$arr_name+=(\"$f_my_sol\")"
+	eval "$arr_name+=(\"$f_brute_sol\")"
+	eval "$arr_name+=(\"$f_problem\")"
 }
 
 validate_form_input() {
@@ -326,7 +487,7 @@ validate_form_input() {
 	# return 1: valid input
 	f_empty=1
 	f_file_exists=2         
-	f_inferenciable=4        
+	f_inferable=4        
 
 	# vars\flags| empty | file exists | inferenciable
 	sol_brute_problem_flags=()
