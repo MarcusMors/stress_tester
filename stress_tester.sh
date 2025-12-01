@@ -34,6 +34,8 @@ result=""
 next_interface=0
 valid_input=0
 
+problem_file_already_exists=0
+
 # ==============================================================================================
 # GLOBAL CONSTANTS
 # ==============================================================================================
@@ -48,14 +50,25 @@ editor_interface=5
 editor_confirmation_interface=6
 
 declare -A form_error_types=(
-	[not_inferenciable]=1
 	[inexistant_file]=2
 	[problem_already_exists]=3
 	[empty_all]=4
 	[empty_problem]=5
 	[empty_solution]=6
 	[empty_brute_solution]=7
+	[invalid_solution]=8
+	[invalid_brute]=9
+	[invalid_problem]=10
+	[infered_solution_not_found]=11
+	[infered_brute_not_found]=12
+	[problem_file_inexistant]=13
+	[problem_file_already_exists]=14
+	[sol_not_inferenciable]=15
+	[brute_not_inferenciable]=16
+	[inexistant_solution_file]=17
+	[inexistant_brute_file]=18
 )
+
 form_errors=()
 
 form_error_type__not_inferenciable=1
@@ -82,6 +95,12 @@ form_error_type=0
 : "${SIG_KILL=9}"
 : "${SIG_TERM=15}"
 
+F_EMPTY=1						# 000001
+F_FILE_EXISTS=2			# 000010
+F_HAS_BASENAME=4		# 000100
+F_HAS_EXTENSION=8		# 001000
+F_IS_INVALID=16			# 010000
+F_INFERABLE=32			# 100000
 
 # ==============================================================================================
 # END GLOBAL SCOPE
@@ -263,13 +282,6 @@ calculate_form_flags(){
     local orig_brute_sol="$_brute_sol"
     local orig_problem="$_problem"
 
-    # 3. Define Flags (as used in your system)
-    local F_EMPTY=1
-    local F_FILE_EXISTS=2
-    local F_HAS_BASENAME=4
-    local F_HAS_EXTENSION=8
-    local F_IS_INVALID=16
-    local F_INFERABLE=32
 
     # =========================================================
     # PHASE A: INFERENCE LOGIC (String Manipulation)
@@ -422,141 +434,118 @@ calculate_form_flags(){
     eval "$arr_name+=($f_prob)"
 }
 
+diagnose_errors() {
+    # 1. Get the computed flags from your previous function
+    # form_flags is the array: (f_my_sol f_brute_sol f_problem)
+    local f_my="${form_flags[0]}"
+    local f_brute="${form_flags[1]}"
+    local f_prob="${form_flags[2]}"
+
+    # A "Syntactically Valid" file must have a Basename AND an Extension
+    local MASK_VALID_SYNTAX=$(( F_BASENAME | F_HAS_EXTENSION ))
+
+    # 3. Reset error array
+    form_errors=()
+
+    # --- CHECK 1: GLOBAL EMPTY ---
+    # If ALL three are empty, return immediately (user just hit enter on a blank form)
+    if (( (f_my & F_EMPTY) && (f_brute & F_EMPTY) && (f_prob & F_EMPTY) )); then
+        form_errors+=("empty_all")
+        return
+    fi
+
+    # --- CHECK 2: INDIVIDUAL EMPTINESS ---
+    # If it is Empty, it wasn't inferable (because inference removes the empty flag)
+    if (( f_my & F_EMPTY )); then form_errors+=("empty_solution"); fi
+    if (( f_brute & F_EMPTY )); then form_errors+=("empty_brute_solution"); fi
+    if (( f_prob & F_EMPTY )); then form_errors+=("empty_problem"); fi
+
+    # --- CHECK 3: SYNTAX / INFERENCE FAILURE ---
+    # If NOT empty, but lacks Base/Ext or is Invalid -> It's "Not Inferable"
+    # We check each file. If it has issues, we add the error.
+
+    # Logic: It is NOT empty, BUT (Is Invalid OR Missing Base OR Missing Ext)
+    check_syntax() {
+        local flags="$1"
+        local err_name="$2"
+        
+				# If empty, we already caught it above. Skip.
+        if (( flags & F_EMPTY )); then return; fi
+
+        # Check validity
+        if (( (flags & F_INVALID) || (flags & MASK_VALID_SYNTAX) != MASK_VALID_SYNTAX )); then
+            # We use a generic error, or you can make specific ones like "solution_invalid"
+            form_errors+=("${err_name}")
+            # Note: You might want to know WHICH file is invalid.
+            # If so, add keys like [invalid_solution]=8 to your error types.
+        fi
+    }
+
+    check_syntax "$f_my" ${form_error_types["invalid_solution"]}
+    check_syntax "$f_brute" ${form_error_types["invalid_brute"]}
+    check_syntax "$f_prob" ${form_error_types["invalid_problem"]}
+
+    # --- CHECK 4: FILE EXISTENCE (The "Disk" Check) ---
+
+    # Logic for Solutions: They MUST exist.
+    # If valid syntax, but file doesn't exist -> error
+    if (( (f_my & MASK_VALID_SYNTAX) == MASK_VALID_SYNTAX )); then
+        if (( (f_my & F_EXISTS) == 0 )); then
+            if (( f_my & F_INFERABLE )); then
+							form_errors+=("infered_solution_not_found")
+						else
+							form_errors+=("inexistant_solution_file")
+						fi
+        fi
+    fi
+
+    if (( (f_brute & MASK_VALID_SYNTAX) == MASK_VALID_SYNTAX )); then
+        if (( (f_brute & F_EXISTS) == 0 )); then
+            if (( f_brute & F_INFERABLE )); then
+							form_errors+=("infered_brute_not_found")
+						else
+							form_errors+=("inexistant_brute_file")
+						fi
+        fi
+    fi
+
+    # Logic for Problem:
+    # CASE A: You are READING a problem -> It must exist -> Update link of RNG_<problem>.py to sol and brute
+    # CASE B: You are CREATING a problem -> It must NOT exist.
+
+		#! TODO: check both cases. File inexistant or alredy exists
+    if (( (f_prob & MASK_VALID_SYNTAX) == MASK_VALID_SYNTAX )); then
+        if (( (f_prob & F_EXISTS) == 1 )); then
+            form_errors+=("problem_file_already_exists")
+        fi
+    fi
+
+    # OR, if you are checking for overwrite protection (creating a new problem):
+    # if (( (f_prob & F_EXISTS) != 0 )); then
+    #    form_errors+=("problem_already_exists")
+    # fi
+}
+
 validate_form_input() {
 	# return 0: invalid input
 	# return 1: valid input
-	f_empty=1
-	f_file_exists=2         
-	f_inferable=4        
 
-	# vars\flags| empty | file exists | inferenciable
 	sol_brute_problem_flags=()
 	calculate_form_flags sol_brute_problem_flags my_sol brute_sol problem
+	diagnose_errors sol_brute_problem_flags
+
 	# dlog "sol_brute_problem_flags: ${sol_brute_problem_flags[@]}"
 
-	dlog "    "
-	dlog "my_sol: ${my_sol}"
-	dlog "brute_sol: ${brute_sol}"
-	dlog "problem: ${problem}"
 
-	problem_file="RNG_${problem}.py"
-	problem_exists=0
-	
-	
-	# Create problem_file
-
-	# is_empty problem f_empty
-	if [[ -n "${problem}" ]]; then
-		check_file_exists "${problem_file}"
-		problem_exists=$?
-		if ((problem_exists == 1)); then
-			form_errors+=${problem_already_exists}
-			return 0
-		fi
-	fi
-
-
-	check_file_exists "${my_sol}"
-	my_sol_exists=$?
-	check_file_exists "${brute_sol}"
-	brute_sol_exists=$?
-
-	dlog "my_sol_exists: ${my_sol_exists}"
-	dlog "brute_sol_exists: ${brute_sol_exists}"
-	dlog "problem_exists: ${problem_exists}"
-
-	local basename="${my_sol%.*}"
-	local brute_basename="${my_sol%.*}"
-
-	# if (( !my_sol_exists && !brute_sol_exists)); then
-	#     form_error_type=${form_error_type__inexistant_file}
-	# fi
-
-	# Infer my_sol if needed
-
-
-	
-	# Infer brute_sol if needed
-	if ((my_sol_exists && !brute_sol_exists)) && [[ -z ${brute_sol} ]]; then
-		local extension="${my_sol##*.}"
-		local inferred_brute_sol="${basename}_brute.${extension}"
-		dlog "extension: $extension"
-		dlog "basename: $basename"
-		dlog "inferred_brute_sol: $inferred_brute_sol"
-
-		check_file_exists "${inferred_brute_sol}"
-		brute_sol_exists=$?
-		brute_sol="${inferred_brute_sol}"
-	fi
-
-	# Infer problem if needed
-	echo "my_sol_exists: ${my_sol_exists}" >> stress.log
-	echo "problem_exists: ${problem_exists}" >> stress.log
-	echo "problem: ${problem}" >> stress.log
-
-	if ((my_sol_exists && !problem_exists)) && [[ -z $problem ]]; then
-		inferred_problem=${basename}
-		local inferred_problem_file="RNG_${basename}_brute.py"
-		dlog "extension: $extension"
-		dlog "basename: $basename"
-		dlog "inferred_problem_file: $inferred_problem_file"
-
-		check_file_exists "${inferred_problem_file}"
-		problem_exists=$?
-		problem_file="${inferred_problem_file}"
-		problem=${inferred_problem}
-	fi
-
-	dlog "FINAL my_sol_exists: ${my_sol_exists}"
-	dlog "FINAL brute_sol_exists: ${brute_sol_exists}"
-	dlog "FINAL problem_exists: ${problem_exists}"
-
-	if ((my_sol_exists && brute_sol_exists && !problem_exists)); then
-		dlog "my_sol: ${my_sol}"
-		dlog "brute_sol: ${brute_sol}"
-		dlog "problem: ${problem}"
-		return 1
-	else
-		form_error_type=${form_error_type__empty_fields}
-		form_errors+=("empty_all")
-		# form_error_type__not_inferenciable
-		return 0
-	fi
+	# if ((my_sol_exists && brute_sol_exists && !problem_exists)); then return 1
+	# else:
+		# form_error_type=${form_error_type__empty_fields}
+		# form_errors+=("empty_all") return 0
 
 	return 0
 }
 
 manage_form_error_type() {
-	# "${form_error_type__not_inferenciable}")
-	#     dialog --msgbox "Error: Missing required files. Please try again." 7 50
-	#     ;;
-	# "${form_error_type__inexistant_file}")
-	#     dialog --msgbox "Error: ." 7 50
-	#     ;;
-
-	error_messages=()
-	declare -A errors
-	copy_assoc_array form_error_types errors
-	for e in "${form_errors[@]}"; do
-    case ${errors[$e]} in
-        ${errors[not_inferenciable]})
-            error_messages+=("Not inferenciable error detected.\n")
-            ;;
-        ${errors[empty_all]})
-            error_messages+=("Not inferenciable error detected.\n")
-            ;;
-        ${errors[inexistant_file]})
-            error_messages+=("Not inferenciable error detected.\n")
-            ;;
-        ${errors[problem_already_exists]})
-						# "Error: Problem already exists (${problem_file}) . Please try again." 7 50
-            error_messages+=("Not inferenciable error detected.\n")
-            ;;
-        *)
-            error_messages+=("Not inferenciable error detected.\n")
-            ;;
-    esac
-	done
 
 	
 
@@ -572,6 +561,131 @@ manage_form_error_type() {
 		exit
 		;;
 	esac
+}
+
+show_form_errors() {
+	declare -A errors
+
+	copy_assoc_array form_error_types errors
+	local error_message="The following errors were found:\n\n"
+	height=15
+	width=50
+
+# final_my_sol_file
+# final_brute_sol_file
+# final_problem_file
+	local _f_my_sol=1
+	local _f_brute_sol=2
+	local _f_problem=4
+	local show_files=0
+	local show_fields=0
+
+	for e in "${form_errors[@]}"; do
+		error_message+="\t"
+    case ${errors[$e]} in
+			${errors[inexistant_solution_file]})
+				error_message+="inexistant solution file.\n"
+				show_files|=${_f_my_sol}
+				show_fields|=${_f_my_sol}
+				;;
+			${errors[inexistant_brute_file]})
+				error_message+="inexistant brute file.\n"
+				show_files|=${_f_brute_sol}
+				show_fields|=${_f_brute_sol}
+				;;
+			${errors[empty_all]})
+				error_message+="All fields are empty, you must fill at least 1 field.\n"
+				;;
+			${errors[empty_problem]})
+				error_message+="empty problem.\n"
+				show_fields|=${_f_problem}
+				;;
+			${errors[empty_solution]})
+				error_message+="empty solution.\n"
+				show_fields|=${_f_my_sol}
+				;;
+			${errors[empty_brute_solution]})
+				error_message+="empty brute solution.\n"
+				show_fields|=${_f_brute_sol}
+				;;
+			${errors[invalid_solution]})
+				error_message+="invalid solution.\n"
+				show_fields|=${_f_my_sol}
+				;;
+			${errors[invalid_brute]})
+				error_message+="invalid brute.\n"
+				show_fields|=${_f_brute_sol}
+				;;
+			${errors[invalid_problem]})
+				error_message+="invalid problem.\n"
+				show_fields|=${_f_problem}
+				;;
+			${errors[infered_solution_not_found]})
+				error_message+="infered solution not found.\n"
+				show_files|=${_f_my_sol}
+				show_fields|=${_f_brute_sol}
+				;;
+			${errors[infered_brute_not_found]})
+				error_message+="infered brute not found.\n"
+				show_files|=${_f_brute_sol}
+				show_fields|=${_f_my_sol}
+				;;
+			${errors[problem_file_already_exists]})
+				error_message+="problem file already exists.\n"
+				show_files|=${_f_problem}
+				show_fields|=${_f_problem}
+				;;
+			${errors[sol_not_inferenciable]})
+				error_message+="sol not inferenciable.\n"
+				show_files|=${_f_brute_sol_}
+				show_fields|=${_f_brute_sol}
+				;;
+			${errors[brute_not_inferenciable]})
+				error_message+="brute not inferenciable.\n"
+				show_files|=${_f_my_sol}
+				show_fields|=${_f_my_sol}
+				;;
+			*)
+				error_message+="error code: ${e}.\n Unknown error type.\n"
+				;;
+    esac
+		height+=5
+	done
+
+	if (( show_files != 0 )); then
+		error_message+="\nSuggested files:\n\t"
+		height+=5
+		if (( show_files & _f_my_sol )); then
+			error_message+="Solution file: ${final_my_sol_file}\n"
+			height+=5
+		fi
+		if (( show_files & _f_brute_sol )); then
+			error_message+="Brute file: ${final_brute_sol_file}\n"
+			height+=5
+		fi
+		if (( show_files & _f_problem )); then
+			error_message+="Problem file: RNG_${final_problem_file}.py\n"
+			height+=5
+		fi
+	fi
+	if (( show_fields != 0 )); then
+		error_message+="\nSuggested files:\n\t"
+		height+=5
+		if (( show_fields & _f_my_sol )); then
+			error_message+="Solution field: ${my_sol_field}\n"
+			height+=5
+		fi
+		if (( show_fields & _f_brute_sol )); then
+			error_message+="Brute field: ${brute_sol_field}\n"
+			height+=5
+		fi
+		if (( show_fields & _f_problem )); then
+			error_message+="Problem field: RNG_${problem_field}.py\n"
+			height+=5
+		fi
+	fi
+
+	dialog --title "Form Errors" --msgbox "${error_message}" "${height}" "${width}"
 }
 
 form() {
@@ -626,6 +740,9 @@ form() {
 				decho "the input is valid"
 				next_interface=${RNG_template_interface}
 				break
+			else
+				decho "the input is invalid"
+				show_form_errors
 			fi
 			;;
 		*)
