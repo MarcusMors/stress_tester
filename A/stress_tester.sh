@@ -1,5 +1,7 @@
 #!/bin/bash
 set -u
+set -o pipefail
+# set -uo pipefail
 # set -euo pipefail
 
 # Copyright (C) 2025 José Enrique Vilca Campana
@@ -774,8 +776,10 @@ resolve_exec_command() {
 	exec_var="$2" # The variable name to set (my_exec or brute_exec)
 
 	basename="${solution%.*}"
-	echo "basename= ${basename}"
+	decho "------------------------"
+	decho "basename= ${basename}"
 	ext="${solution##*.}"
+	decho "extension: ${ext}"
 
 	case "${ext}" in
 	py)
@@ -793,7 +797,7 @@ resolve_exec_command() {
 			eval "${exec_var}=\"./${basename}\""
 		else
 			decho "binary of \"${basename}.cpp\" was not found."
-			g++-11 -std=c++20 "${solution}" -o "${basename}.out"
+			g++ -std=c++20 "${solution}" -o "${basename}.out"
 			decho "${basename}.cpp was compiled as \"${basename}.out\"."
 			eval "${exec_var}=\"./${basename}.out\""
 		fi

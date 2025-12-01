@@ -30,5 +30,4 @@ print()
 # -------------------------------------------------------------------------
 
 my_sol="A.cpp"
-	brute_sol="A_brute.cpp"
-
+brute_sol="A_brute.cpp"
