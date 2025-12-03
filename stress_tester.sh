@@ -27,8 +27,6 @@ program_name="CP Stress Tester"
 my_exec=""
 brute_exec=""
 
-problem_file=""
-
 problem=""
 my_sol=""
 brute_sol=""
@@ -121,9 +119,9 @@ F_INFERABLE=32    # 100000
 debugging=1
 dlog() {
 	# The purpose of dlog is ...
-	file="./debug.log"
+	dfile="./debug.log"
 	if [[ ${debugging} == 1 ]]; then
-		echo "$@" >>${file}
+		echo "$@" >>${dfile}
 	fi
 }
 
@@ -302,15 +300,17 @@ calculate_form_flags() {
 
 	# Check what we actually have (Simple booleans for logic)
 	local has_my_base=0
-	[[ $_my_sol != *.* || -n $my_base ]] && has_my_base=1
+	[[ ${_my_sol} != *.* || -n ${my_base} ]] && has_my_base=1
 	local has_my_ext=0
-	[[ $_my_sol == *.* && -n $my_ext ]] && has_my_ext=1
+	[[ ${_my_sol} == *.* && -n ${my_ext} ]] && has_my_ext=1
 	local has_br_base=0
-	[[ $_brute_sol != *.* || -n $brute_base ]] && has_br_base=1
+	[[ ${_brute_sol} != *.* || -n ${brute_base} ]] && has_br_base=1
 	local has_br_ext=0
-	[[ $_brute_sol == *.* && -n $brute_ext ]] && has_br_ext=1
-	dlog "has_br_base: $has_br_base"
-	dlog "has_br_ext:  $has_br_ext"
+	[[ ${_brute_sol} == *.* && -n ${brute_ext} ]] && has_br_ext=1
+	dlog "has_br_base: ${has_br_base}"
+	dlog "has_br_ext:  ${has_br_ext}"
+	dlog "has_my_base: ${has_my_base}"
+	dlog "has_my_ext:  ${has_my_ext}"
 
 	# -- 1. Fix My Sol --
 	if [[ -n $_my_sol && $_my_sol != */* ]]; then
@@ -321,17 +321,19 @@ calculate_form_flags() {
 		# If Extension only (starts with dot), try to steal base from brute
 		if ((!has_my_base && has_my_ext && has_br_base)); then
 			local clean_base
-			clean_base="$(strip_brute_suffix "$brute_base")"
-			[[ -n $clean_base ]] && _my_sol="${clean_base}.${my_ext}"
+			clean_base="$(strip_brute_suffix "${brute_base}")"
+			dlog "clean_base: ${clean_base}"
+			[[ -n ${clean_base} ]] && _my_sol="${clean_base}.${my_ext}"
+			dlog "my_sol: ${_my_sol}"
 		fi
 	fi
 
 	# -- 2. Fix Brute Sol --
 	# Update my_sol info in case it changed
 	my_ext="${_my_sol##*.}"
-	[[ $_my_sol == *.* && -n $my_ext ]] && has_my_ext=1 || has_my_ext=0
+	[[ ${_my_sol} == *.* && -n ${my_ext} ]] && has_my_ext=1 || has_my_ext=0
 
-	if [[ -z $_brute_sol || $_brute_sol == */* ]]; then
+	if [[ -z ${_brute_sol} || ${_brute_sol} == */* ]]; then
 		# Brute empty or invalid: create from My Sol
 		has_basename "${_my_sol}"
 		if (( $? )); then # If my_sol has base (flag returned)
@@ -394,7 +396,10 @@ calculate_form_flags() {
 			local chk_br_base=$?
 			if ((chk_br_base)); then
 				local raw="${_brute_sol%.*}"
-				_problem="$(strip_brute_suffix "$raw")"
+				clean_base="$(strip_brute_suffix "$raw")"
+				dlog "${clean_base}"
+				_problem="${clean_base}"
+				dlog "_problem: ${_problem}"
 			fi
 		fi
 	fi
@@ -403,9 +408,12 @@ calculate_form_flags() {
 	# PHASE B: UPDATE GLOBALS
 	# =========================================================
 
-	final_my_sol_file="$_my_sol"
-	final_brute_sol_file="$_brute_sol"
-	final_problem_file="$_problem"
+	final_my_sol_file="${_my_sol}"
+	final_brute_sol_file="${_brute_sol}"
+	final_problem_file="${_problem}"
+	dlog "final_my_sol_file: ${final_my_sol_file}"
+	dlog "final_brute_sol_file: ${final_brute_sol_file}"
+	dlog "final_problem_file: ${final_problem_file}"
 
 	# =========================================================
 	# PHASE C: CALCULATE FLAGS
@@ -775,7 +783,11 @@ form() {
 }
 
 retrieve_values() {
+	# $1: filename
+	#sanitized, receibes 
 	# Attempt to extract values from the file
+	problem_file="$1"
+
 	my_sol=$(grep '^my_sol=' "${problem_file}" | sed 's/^my_sol="//; s/"$//')
 	brute_sol=$(grep '^brute_sol=' "${problem_file}" | sed 's/^brute_sol="//; s/"$//')
 
@@ -842,17 +854,22 @@ resolve_exec_command() {
 checker() {
 	clear
 	decho "INSIDE CHECKER"
+	decho "$(pwd)"
 	sleep 1
 
-	file="$1"
-	problem_file=${file}
+	file="${1}"
+	dlog "file: ${file}"
+	decho "file: ${file}"
+	decho "$(ls .)"
+	sleep 1
 
 	my_sol=""
 	brute_sol=""
 	my_exec=""
 	brute_exec=""
 
-	retrieve_values
+	decho "PREV file: ${file}"
+	retrieve_values ${file}
 	decho "after retrieve_values"
 	decho "--->my_sol : ${my_sol}"
 	decho "--->brute_sol : ${brute_sol}"
@@ -897,7 +914,7 @@ checker() {
 }
 
 fill_common() {
-	cat <<'EOF' >"${problem_file}"
+	cat <<'EOF' >"${final_problem_file}"
 import random
 import string
 
@@ -921,14 +938,14 @@ EOF
 }
 
 fill_Basic() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #basic
 x = random.randint(1, 10)
 EOF
 }
 
 fill_n_list() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #n_list
 n = random.randint(1, 10)  # Number of inputs
 sprint(n)
@@ -941,7 +958,7 @@ EOF
 }
 
 fill_n_Matrix() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #n_Matrix
 n = random.randint(1, 10)  # Number of inputs
 sprint(n)
@@ -955,7 +972,7 @@ EOF
 }
 
 fill_nxm_Matrix() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #nxm_Matrix
 n = random.randint(1, 5)  # Number of inputs
 m = random.randint(5, 10)  # Number of inputs
@@ -970,7 +987,7 @@ EOF
 }
 
 fill_test_casing() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #test_casing
 t = random.randint(1, 3)  # Number of inputs
 n = random.randint(1, 10)  # Number of inputs
@@ -980,14 +997,14 @@ EOF
 }
 
 fill_Graph_adj() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #Graph_adj
 #idk, jelp
 
 EOF
 }
 fill_Graph_matrix() {
-	cat <<'EOF' >>"${problem_file}"
+	cat <<'EOF' >>"${final_problem_file}"
 #Graph_matrix
 #idk, jelp
 
@@ -995,19 +1012,19 @@ EOF
 }
 
 fill_with_var_data() {
-	cat <<EOF >>"${problem_file}"
+	cat <<EOF >>"${final_problem_file}"
 # -------------------------------------------------------------------------
 # DO NOT TOUCH THESE LINES
 # -------------------------------------------------------------------------
 
-my_sol="${my_sol}"
-	brute_sol="${brute_sol}"
+my_sol="${final_brute_sol_file}"
+brute_sol="${final_brute_sol_file}"
 
 EOF
 }
 
 create_RNG_file_according_to_templates() {
-	problem_file="RNG_${problem}.py"
+	final_problem_file="RNG_${problem}.py"
 	fill_common
 
 	# Read tempfile content as a single line
@@ -1065,20 +1082,20 @@ editor() {
 	# setup edit
 	clear
 	sleep 1
-	echo "CONTENT OF ${problem_file}:"
-	cat "${problem_file}"
+	echo "CONTENT OF ${final_problem_file}:"
+	cat "${final_problem_file}"
 	sleep 1
 
-	cat "${problem_file}" >"${tempfile}"
+	cat "${final_problem_file}" >"${tempfile}"
 
 	${DIALOG} --title "EDIT BOX" \
-		--fixed-font --editbox "${tempfile}" 0 0 2>"${problem_file}"
+		--fixed-font --editbox "${tempfile}" 0 0 2>"${final_problem_file}"
 	local return_code=$?
 
 	clear
 
 	if [[ ${return_code} == 0 ]]; then
-		echo "Editing completed. Changes saved to ${problem_file}."
+		echo "Editing completed. Changes saved to ${final_problem_file}."
 	elif [[ ${return_code} == 1 ]]; then
 		echo "Editing canceled."
 	else
@@ -1171,6 +1188,7 @@ create_RNG_interface_state_machine() {
 
 main() {
 	if [[ $# == 1 ]]; then
+		# dlog "@: $@"
 		checker "$@"
 	elif [[ $# == 0 ]]; then
 		create_RNG_interface_state_machine
