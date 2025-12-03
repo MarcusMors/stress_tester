@@ -309,6 +309,8 @@ calculate_form_flags() {
 	[[ $_brute_sol != *.* || -n $brute_base ]] && has_br_base=1
 	local has_br_ext=0
 	[[ $_brute_sol == *.* && -n $brute_ext ]] && has_br_ext=1
+	dlog "has_br_base: $has_br_base"
+	dlog "has_br_ext:  $has_br_ext"
 
 	# -- 1. Fix My Sol --
 	if [[ -n $_my_sol && $_my_sol != */* ]]; then
@@ -331,9 +333,8 @@ calculate_form_flags() {
 
 	if [[ -z $_brute_sol || $_brute_sol == */* ]]; then
 		# Brute empty or invalid: create from My Sol
-		has_basename _my_sol
-		local chk_my_base=$?     # Use helper to be sure
-		if ((chk_my_base)); then # If my_sol has base (flag returned)
+		has_basename "${_my_sol}"
+		if (( $? )); then # If my_sol has base (flag returned)
 			local new_base="${_my_sol%.*}_brute"
 			if ((has_my_ext)); then
 				_brute_sol="${new_base}.${my_ext}"
@@ -347,11 +348,35 @@ calculate_form_flags() {
 			_brute_sol="${_brute_sol}.${my_ext}"
 		fi
 		if ((!has_br_base && has_br_ext)); then
-			has_basename _my_sol
-			local chk_my_base=$?
-			if ((chk_my_base)); then
+			has_basename "${_my_sol}"
+			if (( $? )); then
+				# Have the same extension?
+				# if different, check with and without suffix _brute.
 				local base="${_my_sol%.*}"
-				_brute_sol="${base}.${brute_ext}"
+				local with="${base}_brute.${brute_ext}"
+				local without="${base}.${brute_ext}"
+				file_exists "${with}"
+				local _with_suffix=$?
+				file_exists "${without}"
+				local _without_suffix=$?
+				if [[ "${brute_ext}" != "${my_ext}" ]]; then
+					# try with and without suffix *_brute.*
+					if (( _with_suffix )); then
+						_brute_sol="${base}_brute.${brute_ext}";
+					elif (( _without_suffix )); then
+						_brute_sol="${base}.${brute_ext}";
+					else
+						_brute_sol="no_infered_brute_file_found.error";
+					fi
+				# if same, check with suffix _brute.
+				else
+					if (( _with_suffix )); then
+						_brute_sol="${base}_brute.${brute_ext}";
+					else
+						_brute_sol="no_infered_brute_file_found.error";
+					fi
+				fi
+
 			fi
 		fi
 	fi
@@ -359,13 +384,13 @@ calculate_form_flags() {
 	# -- 3. Fix Problem --
 	if [[ -z $_problem ]]; then
 		# Try my_sol first
-		has_basename _my_sol
+		has_basename $_my_sol
 		local chk_my_base=$?
 		if ((chk_my_base)); then
 			_problem="${_my_sol%.*}"
 		else
 			# Try brute_sol
-			has_basename _brute_sol
+			has_basename $_brute_sol
 			local chk_br_base=$?
 			if ((chk_br_base)); then
 				local raw="${_brute_sol%.*}"
@@ -506,6 +531,7 @@ are_there_errors_in_form() {
 				form_errors+=("infered_solution_not_found")
 			else
 				form_errors+=("inexistant_solution_file")
+				dlog f_my
 			fi
 		fi
 	fi
@@ -514,6 +540,9 @@ are_there_errors_in_form() {
 		if (((f_brute & F_FILE_EXISTS) == 0)); then
 			if ((f_brute & F_INFERABLE)); then
 				form_errors+=("infered_brute_not_found")
+				dlog "f_brute: $f_brute"
+				dlog "final_brute_sol_file: $final_brute_sol_file"
+				dlog "brute_sol_field: $brute_sol_field"
 			else
 				form_errors+=("inexistant_brute_file")
 			fi
